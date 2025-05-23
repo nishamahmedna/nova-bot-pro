@@ -1,0 +1,738 @@
+#home
+
+import pygame
+import os
+import pyttsx3
+import json
+import cv2
+from moviepy import VideoFileClip
+from ffpyplayer.player import MediaPlayer
+import sys
+import threading
+import vlc
+import time
+import subprocess
+import queue
+from vosk import Model, KaldiRecognizer
+import sounddevice as sd
+import numpy as np
+import sys
+from shared import play_video, render_voice_command
+from speak import speak
+
+# Button and layout settings
+BUTTONS = [
+    "Tutorials", "School", "College", "International", "News", "About"
+]
+BUTTON_WIDTH, BUTTON_HEIGHT = 220, 40
+BUTTON_MARGIN = 20
+FONT_SIZE = 28
+BUTTON_COLOR = (70, 130, 180)
+HOVER_COLOR = (100, 149, 237)
+TEXT_COLOR = (255, 255, 255)
+
+PAGES = {
+    "Tutorials": "/home/novabot/novabot/pages/tutorials",
+    "School": "/home/novabot/novabot/pages/school",
+    "College": "/home/novabot/novabot/pages/college",
+    "International": "/home/novabot/novabot/pages/international",
+    "News": "/home/novabot/novabot/pages/news",
+    "About": "/home/novabot/novabot/pages/about"
+}
+
+EXIT_BUTTON_SIZE = 40
+EXIT_BUTTON_MARGIN = 10
+
+latest_voice_command = ""
+
+def draw_button(screen, rect, text, font, is_hovered):
+    color = HOVER_COLOR if is_hovered else BUTTON_COLOR
+    pygame.draw.rect(screen, color, rect, border_radius=10)
+    text_surf = font.render(text, True, TEXT_COLOR)
+    text_rect = text_surf.get_rect(center=rect.center)
+    screen.blit(text_surf, text_rect)
+
+def draw_exit_button(screen):
+    font = pygame.font.SysFont(None, 48)
+    text_surf = font.render("X", True, TEXT_COLOR)
+    text_rect = text_surf.get_rect(topright=(screen.get_width() - EXIT_BUTTON_MARGIN, EXIT_BUTTON_MARGIN))
+    screen.blit(text_surf, text_rect)
+    return text_rect
+
+def generate_thumbnail(video_path):
+    import cv2
+    cap = cv2.VideoCapture(video_path)
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        return None
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    surface = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
+    return pygame.transform.scale(surface, (200, 120))
+    
+def find_matching_category(command):
+    command_words = command.lower().split()
+    for page_name in PAGES.keys():
+        page_words = page_name.lower().split()
+        # Check if ALL important words of page_name are found in command
+        if all(any(pw in cw for cw in command_words) for pw in page_words):
+            return page_name
+    return None
+
+def render_voice_command(screen, command_text):
+    font = pygame.font.SysFont(None, 24)
+    text_surface = font.render(f"Voice Command: {command_text}", True, (255, 255, 255))
+    screen.blit(text_surface, (20, screen.get_height() - 40))
+
+def play_video(screen, video_path, background_image=None, voice_command_queue=None):
+    global latest_voice_command
+
+    screen_width, screen_height = screen.get_size()
+    frame_width, frame_height = 800, 450
+    x = (screen_width - frame_width) // 2
+    y = (screen_height - frame_height) // 2
+
+    pygame.display.set_caption("Playing Video")
+    clock = pygame.time.Clock()
+    player = MediaPlayer(video_path)
+
+    close_button_size = 30
+    close_rect = pygame.Rect(x + frame_width - close_button_size - 10, y + 10, close_button_size, close_button_size)
+
+    playing = True
+    paused = False
+
+    def monitor_voice_commands():
+        nonlocal playing, paused
+        while playing:
+            if voice_command_queue and not voice_command_queue.empty():
+                command = voice_command_queue.get().lower()
+                latest_voice_command = command
+                if command in ("back", "stop", "close", "exit"):
+                    playing = False
+            time.sleep(0.1)
+
+    if voice_command_queue:
+        threading.Thread(target=monitor_voice_commands, daemon=True).start()
+
+    while playing:
+        if not paused:
+            frame, val = player.get_frame()
+        else:
+            frame, val = None, None
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                player.close_player()
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                player.close_player()
+                return
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if close_rect.collidepoint(event.pos):
+                    player.close_player()
+                    return
+
+        if background_image:
+            screen.blit(background_image, (0, 0))
+        else:
+            screen.fill((0, 0, 0))
+
+        if val == 'eof':
+            break
+
+        if frame is not None:
+            img, t = frame
+            frame_surface = pygame.image.frombuffer(img.to_bytearray()[0], img.get_size(), 'RGB')
+            frame_surface = pygame.transform.scale(frame_surface, (frame_width, frame_height))
+            pygame.draw.rect(screen, (255, 255, 255), (x - 4, y - 4, frame_width + 8, frame_height + 8))
+            screen.blit(frame_surface, (x, y))
+
+        pygame.draw.rect(screen, (200, 0, 0), close_rect)
+        font = pygame.font.SysFont(None, 24)
+        text = font.render('X', True, (255, 255, 255))
+        screen.blit(text, text.get_rect(center=close_rect.center))
+
+        render_voice_command(screen, latest_voice_command)
+
+        pygame.display.flip()
+        clock.tick(30)
+
+    player.close_player()
+    
+def show_category_page(screen, category_name, bg_image, voice_command_queue):
+    global latest_voice_command
+    font = pygame.font.SysFont(None, 24)
+    title_font = pygame.font.SysFont(None, FONT_SIZE)
+    subcategory_font = pygame.font.SysFont(None, 28)
+
+    SUBCATEGORIES = {
+        "School": ["Academic Programs", "Camps", "Competition", "Feedback", "Presentation", "Workshop"],
+        "College": ["Workshop", "Presentation", "Basic Electronics", 
+        "Arduino", "Raspberry Pi", "Robotics", "drones", 
+        "Machine Learning", "Augemented Reality", "Virtual Reality", 
+        "Projects"],
+        "International": ["Collaboration", "Recognition", "Students"],
+        "Tutorials": ["videos"]
+    }
+
+    page_path = PAGES.get(category_name, "")
+    subcategories = SUBCATEGORIES.get(category_name, [])
+    metadata_path = os.path.join(page_path, "metadata.json")
+    videos = []
+
+    if os.path.exists(metadata_path):
+        with open(metadata_path, "r") as f:
+            videos = json.load(f)
+
+    video_map = {video["title"].lower(): os.path.join(page_path, video["file"]) for video in videos}
+
+    thumb_rects = []
+    subcat_buttons = []
+    start_y = 150
+    spacing_x, spacing_y = 250, 220
+    col_count = screen.get_width() // spacing_x
+
+    running = True
+    while running:
+        screen.blit(bg_image, (0, 0))
+        pygame.draw.rect(screen, BUTTON_COLOR, pygame.Rect(20, 20, 80, 36), border_radius=8)
+        back_font = pygame.font.SysFont(None, 26)
+        screen.blit(back_font.render("Back", True, TEXT_COLOR), (35, 25))
+
+        title_surface = title_font.render(category_name, True, TEXT_COLOR)
+        screen.blit(title_surface, (screen.get_width() // 2 - title_surface.get_width() // 2, 60))
+
+        thumb_rects.clear()
+        subcat_buttons.clear()
+
+        if subcategories:
+            left_x = 100
+            right_x = 450
+            for idx, subcat in enumerate(subcategories):
+                col = idx % 2  # 0 for left, 1 for right
+                row = idx // 2
+                x = left_x if col == 0 else right_x
+                y = 120 + row * 60
+                btn_rect = pygame.Rect(x, y, 200, 40)
+                pygame.draw.rect(screen, (180, 180, 250), btn_rect, border_radius=10)
+                screen.blit(subcategory_font.render(subcat, True, (0, 0, 0)), (btn_rect.x + 10, btn_rect.y + 5))
+                subcat_buttons.append((btn_rect, subcat))
+
+        else:
+            for i, video in enumerate(videos):
+                video_path = os.path.join(page_path, video["file"])
+                thumbnail = generate_thumbnail(video_path)
+                if not thumbnail:
+                    continue
+                x = (i % col_count) * spacing_x + 25
+                y = (i // col_count) * spacing_y + start_y
+                rect = pygame.Rect(x, y, 200, 120)
+                screen.blit(thumbnail, rect)
+                screen.blit(font.render(video["title"], True, TEXT_COLOR), (x, y + 125))
+                screen.blit(font.render(video["description"], True, TEXT_COLOR), (x, y + 150))
+                thumb_rects.append((rect, video_path))
+
+        if voice_command_queue and not voice_command_queue.empty():
+            command = voice_command_queue.get().lower()
+            latest_voice_command = command
+
+            if command.startswith("play "):
+                title = command[5:].strip().lower()
+                if title in video_map:
+                    play_video(screen, video_map[title], bg_image, voice_command_queue)
+            elif command.startswith("open "):
+                category = command[5:].strip().title()
+                if category in PAGES:
+                    speak(f"Showing {category}")
+                    show_category_page(screen, category, bg_image, voice_command_queue)
+                    return
+                elif category_name in SUBCATEGORIES and category in SUBCATEGORIES[category_name]:
+                    speak(f"Showing {category}")
+                    show_subcategory_page(screen, category_name, category, bg_image, voice_command_queue)
+                    return
+            else:
+                if category_name in SUBCATEGORIES:
+                    for subcat in SUBCATEGORIES[category_name]:
+                        if subcat.lower() in command:
+                            speak(f"Showing {subcat}")
+                            show_subcategory_page(screen, category_name, subcat, bg_image, voice_command_queue)
+                            return
+
+            if command in ["back", "go back", "home", "go to home", "return"]:
+                return
+
+        render_voice_command(screen, latest_voice_command)
+        pygame.display.flip()
+        pygame.time.delay(100)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if pygame.Rect(20, 20, 80, 36).collidepoint(event.pos):
+                    return
+                for btn_rect, subcat in subcat_buttons:
+                    if btn_rect.collidepoint(event.pos):
+                        speak(f"Opening {subcat}")
+                        show_subcategory_page(screen, category_name, subcat, bg_image, voice_command_queue)
+                        return
+                for rect, path in thumb_rects:
+                    if rect.collidepoint(event.pos):
+                        play_video(screen, path, bg_image, voice_command_queue)
+
+def show_subcategory_page(screen, category_name, subcategory_name, bg_image, voice_command_queue):
+    global latest_voice_command
+    font = pygame.font.SysFont(None, 24)
+    title_font = pygame.font.SysFont(None, FONT_SIZE)
+
+    sub_path = os.path.join(PAGES[category_name], subcategory_name.lower().replace(" ", "_"))
+    metadata_path = os.path.join(sub_path, "metadata.json")
+    videos = []
+
+    if os.path.exists(metadata_path):
+        with open(metadata_path, "r") as f:
+            videos = json.load(f)
+
+    video_map = {video["title"].lower(): os.path.join(sub_path, video["file"]) for video in videos}
+
+    thumb_rects = []
+    spacing_x, spacing_y = 250, 220
+    col_count = screen.get_width() // spacing_x
+
+    running = True
+    while running:
+        screen.blit(bg_image, (0, 0))
+        pygame.draw.rect(screen, BUTTON_COLOR, pygame.Rect(20, 20, 80, 36), border_radius=8)
+        screen.blit(pygame.font.SysFont(None, 26).render("Back", True, TEXT_COLOR), (35, 25))
+
+        title_surface = title_font.render(subcategory_name, True, TEXT_COLOR)
+        screen.blit(title_surface, (screen.get_width() // 2 - title_surface.get_width() // 2, 60))
+
+        thumb_rects.clear()
+        for i, video in enumerate(videos):
+            video_path = os.path.join(sub_path, video["file"])
+            thumbnail = generate_thumbnail(video_path)
+            if not thumbnail:
+                continue
+            x = (i % col_count) * spacing_x + 25
+            y = (i // col_count) * spacing_y + 150
+            rect = pygame.Rect(x, y, 200, 120)
+            screen.blit(thumbnail, rect)
+            screen.blit(font.render(video["title"], True, TEXT_COLOR), (x, y + 125))
+            screen.blit(font.render(video["description"], True, TEXT_COLOR), (x, y + 150))
+            thumb_rects.append((rect, video_path))
+
+        if voice_command_queue and not voice_command_queue.empty():
+            command = voice_command_queue.get().lower()
+            latest_voice_command = command
+
+            if command.startswith("play "):
+                title = command[5:].strip().lower()
+                if title in video_map:
+                    play_video(screen, video_map[title], bg_image, voice_command_queue)
+            elif command in ["back", "go back", "home", "go to home", "return"]:
+                return
+
+        render_voice_command(screen, latest_voice_command)
+        pygame.display.flip()
+        pygame.time.delay(100)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if pygame.Rect(20, 20, 80, 36).collidepoint(event.pos):
+                    return
+                for rect, path in thumb_rects:
+                    if rect.collidepoint(event.pos):
+                        play_video(screen, path, bg_image, voice_command_queue)
+
+        if voice_command_queue and not voice_command_queue.empty():
+            command = voice_command_queue.get().lower()
+            latest_voice_command = command
+
+            if command.startswith("play "):
+                title = command[5:].strip().lower()
+                if title in video_map:
+                    play_video(screen, video_map[title], bg_image, voice_command_queue)
+            elif command in ["back", "go back", "home", "go to home", "return"]:
+                return
+
+        render_voice_command(screen, latest_voice_command)
+        pygame.display.flip()
+        pygame.time.delay(100)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if pygame.Rect(20, 20, 80, 36).collidepoint(event.pos):
+                    return
+                for rect, path in thumb_rects:
+                    if rect.collidepoint(event.pos):
+                        play_video(screen, path, bg_image, voice_command_queue)
+
+import threading
+
+def show_find_page(screen, bg_image, voice_command_queue):
+    clock = pygame.time.Clock()
+    font = pygame.font.SysFont(None, 60)
+    small_font = pygame.font.SysFont(None, 40)
+
+    back_button_rect = pygame.Rect(50, 50, 120, 50)
+
+    listening_text = "Listening for your command..."
+    recognized_text = ""
+
+    # Start voice listener in background
+    def listen_and_store():
+        from vosk import Model, KaldiRecognizer
+        import sounddevice as sd
+        import queue
+        import json
+
+        q = queue.Queue()
+        model = Model("model")  # Path to your vosk model
+        recognizer = KaldiRecognizer(model, 16000)
+
+        def callback(indata, frames, time, status):
+            if status:
+                print(status)
+            q.put(bytes(indata))
+
+        with sd.RawInputStream(samplerate=16000, blocksize=8000, dtype='int16',
+                               channels=1, callback=callback):
+            while True:
+                data = q.get()
+                if recognizer.AcceptWaveform(data):
+                    result = json.loads(recognizer.Result())
+                    voice_command = result.get("text", "")
+                    if voice_command:
+                        voice_command_queue.put(voice_command)
+                        break
+
+    threading.Thread(target=listen_and_store, daemon=True).start()
+
+    running = True
+    while running:
+        screen.blit(bg_image, (0, 0))
+
+        # Title
+        title_text = font.render("Search", True, (255, 255, 255))
+        screen.blit(title_text, (screen.get_width() // 2 - title_text.get_width() // 2, 60))
+
+        # Listening indicator
+        listening_surf = small_font.render(listening_text, True, (200, 200, 200))
+        screen.blit(listening_surf, (screen.get_width() // 2 - listening_surf.get_width() // 2, 150))
+
+        # Show recognized text if available
+        if not voice_command_queue.empty():
+            recognized_text = voice_command_queue.get()
+
+        if recognized_text:
+            result_surf = font.render(recognized_text, True, (255, 255, 0))
+            screen.blit(result_surf, (screen.get_width() // 2 - result_surf.get_width() // 2, 250))
+
+        # Back button
+        pygame.draw.rect(screen, (100, 100, 100), back_button_rect)
+        back_text = small_font.render("Back", True, (255, 255, 255))
+        screen.blit(back_text, back_text.get_rect(center=back_button_rect.center))
+
+        pygame.display.flip()
+        clock.tick(60)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if back_button_rect.collidepoint(event.pos):
+                    return  # Go back to home
+
+def listen_for_command_in_background(q):
+    from vosk import Model, KaldiRecognizer
+    import sounddevice as sd
+    import json
+
+    model = Model("model")
+    rec = KaldiRecognizer(model, 16000)
+
+    with sd.RawInputStream(samplerate=16000, blocksize=8000, dtype='int16',
+                           channels=1, callback=lambda indata, frames, time, status: rec.AcceptWaveform(indata)):
+        while True:
+            if rec.Result():
+                result = json.loads(rec.Result())
+                if 'text' in result:
+                    q.put(result['text'])
+                    break
+
+def show_find_page(screen, bg_image, voice_command_queue):
+    font = pygame.font.SysFont(None, 40)
+    listening_font = pygame.font.SysFont(None, 30)
+    back_button_rect = pygame.Rect(20, 20, 100, 40)
+
+    screen.blit(bg_image, (0, 0))
+
+    listening_text = listening_font.render("Listening for your command...", True, (255, 255, 255))
+    screen.blit(listening_text, (screen.get_width()//2 - listening_text.get_width()//2, 100))
+
+    pygame.draw.rect(screen, (0, 0, 0), back_button_rect, border_radius=12)
+    back_text = font.render("Back", True, (255, 255, 255))
+    screen.blit(back_text, back_button_rect.move(10, 5))
+
+    pygame.display.flip()
+
+    # --- Listen for voice ---
+    command = None
+    listening = True
+    while listening:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if back_button_rect.collidepoint(event.pos):
+                    return
+
+        if voice_command_queue and not voice_command_queue.empty():
+            command = voice_command_queue.get().lower()
+            listening = False
+
+    if command:
+        if "back" in command:
+            return
+        else:
+            perform_search_and_show_results(screen, bg_image, voice_command_queue, command)
+            
+    render_voice_command(screen, latest_voice_command)  # <-- already in your home page, add to find page too
+    pygame.display.flip()
+
+from ffpyplayer.player import MediaPlayer
+
+def perform_search_and_show_results(screen, bg_image, voice_command_queue, search_text):
+    results = []
+    video_index_map = {}
+
+    for category, path in PAGES.items():
+        for root, dirs, files in os.walk(path):
+            if "metadata.json" in files:
+                metadata_path = os.path.join(root, "metadata.json")
+                with open(metadata_path) as f:
+                    for video in json.load(f):
+                        if (search_text.lower() in video["title"].lower() or
+                            search_text.lower() in video["description"].lower() or
+                            any(search_text.lower() in keyword.lower() for keyword in video.get("keywords", []))):
+                            video["category"] = category
+                            rel_path = os.path.relpath(root, path)
+                            video["file"] = os.path.join(rel_path, video["file"]) if rel_path != "." else video["file"]
+                            results.append(video)
+
+    font = pygame.font.SysFont(None, 32)
+    button_font = pygame.font.SysFont(None, 28)
+    title_font = pygame.font.SysFont(None, 40)
+
+    back_button_rect = pygame.Rect(20, 20, 100, 40)
+    thumb_rects = []
+    latest_voice_command = ""
+
+    running = True
+    while running:
+        screen.blit(bg_image, (0, 0))
+
+        # Heading
+        heading_text = title_font.render(f'Results for "{search_text}"', True, (255, 255, 255))
+        screen.blit(heading_text, (screen.get_width() // 2 - heading_text.get_width() // 2, 20))
+
+        # Back button
+        pygame.draw.rect(screen, (0, 0, 0), back_button_rect, border_radius=10)
+        back_text = button_font.render("Back", True, (255, 255, 255))
+        screen.blit(back_text, back_button_rect.move(10, 5))
+
+        # Clear previous rects
+        thumb_rects.clear()
+        video_index_map.clear()
+
+        if results:
+            col_count = 3
+            spacing_x = 260
+            spacing_y = 200
+            start_y = 100
+
+            for i, video in enumerate(results):
+                index_num = i + 1
+                category = video["category"]
+                page_path = PAGES[category]
+                video_path = os.path.join(page_path, video["file"])
+                thumbnail = generate_thumbnail(video_path)
+                if not thumbnail:
+                    continue
+
+                x = (i % col_count) * spacing_x + 50
+                y = (i // col_count) * spacing_y + start_y
+                rect = pygame.Rect(x, y, 200, 120)
+                screen.blit(thumbnail, rect)
+
+                title_text = font.render(f"{index_num}. {video['title']}", True, (255, 255, 255))
+                screen.blit(title_text, (x, y + 130))
+
+                thumb_rects.append((rect, video_path))
+                video_index_map[str(index_num)] = video_path
+                video_index_map[video["title"].lower()] = video_path
+        else:
+            no_result_text = font.render("No results found.", True, (255, 0, 0))
+            screen.blit(no_result_text, (screen.get_width() // 2 - no_result_text.get_width() // 2, 200))
+
+        # Display voice command
+        render_voice_command(screen, latest_voice_command)
+
+        pygame.display.flip()
+
+        # Voice command handling
+        if not voice_command_queue.empty():
+            command = voice_command_queue.get().lower().strip()
+            latest_voice_command = command
+
+            if "back" in command or "go back" in command:
+                from home import show_find_page
+                show_find_page(screen, bg_image, voice_command_queue)
+                return
+
+            if command.startswith("play "):
+                target = command[5:].strip()
+                word2num = {
+                    "one":   "1",
+                    "two":   "2",
+                    "three": "3",
+                    "four":  "4",
+                    "five":  "5",
+                    "six":   "6",
+                    "seven": "7",
+                    "eight": "8",
+                    "nine":  "9",
+                    "ten":   "10",
+                }
+                if target in word2num:
+                    target = word2num[target]
+                if target in video_index_map:
+                    play_video(screen, video_index_map[target], background_image=bg_image, voice_command_queue=voice_command_queue)
+                    return
+
+        # Mouse handling
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if back_button_rect.collidepoint(event.pos):
+                    from home import show_find_page
+                    show_find_page(screen, bg_image, voice_command_queue)
+                    return
+                for rect, video_path in thumb_rects:
+                    if rect.collidepoint(event.pos):
+                        play_video(screen, video_path, background_image=bg_image, voice_command_queue=voice_command_queue)
+                        return
+
+def show_home(screen, voice_command_queue):
+    global latest_voice_command
+    bg_image = pygame.image.load("/home/novabot/novabot/assets/novabot.png")
+    bg_image = pygame.transform.scale(bg_image, screen.get_size())
+
+    font = pygame.font.SysFont(None, FONT_SIZE)
+    screen_width, screen_height = screen.get_size()
+    col_x = [screen_width // 4 - BUTTON_WIDTH // 2, 3 * screen_width // 4 - BUTTON_WIDTH // 2]
+    total_button_height = 4 * (BUTTON_HEIGHT + BUTTON_MARGIN) - BUTTON_MARGIN
+    start_y = screen_height - total_button_height - 150
+
+    button_rects = []
+    for i, label in enumerate(BUTTONS):
+        col = 0 if i < 4 else 1
+        row = i % 4
+        x = col_x[col]
+        y = start_y + row * (BUTTON_HEIGHT + BUTTON_MARGIN)
+        button_rects.append((pygame.Rect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT), label))
+
+    find_button_rect = pygame.Rect(screen_width // 2 - 60, 30, 120, 40)
+
+    running = True
+    while running:
+        screen.blit(bg_image, (0, 0))
+        mouse_pos = pygame.mouse.get_pos()
+        exit_rect = draw_exit_button(screen)
+
+        # Draw the Find button
+        pygame.draw.rect(screen, (0, 0, 0), find_button_rect, border_radius=12)
+        find_font = pygame.font.SysFont(None, 28)
+        find_text = find_font.render("Find", True, (255, 255, 255))
+        screen.blit(find_text, find_text.get_rect(center=find_button_rect.center))
+
+        # Draw all category buttons
+        for rect, label in button_rects:
+            draw_button(screen, rect, label, font, rect.collidepoint(mouse_pos))
+
+        # Handle voice commands
+        
+        if voice_command_queue and not voice_command_queue.empty():
+            command = voice_command_queue.get().lower()
+            latest_voice_command = command
+
+            if "find" in command:
+                show_find_page(screen, bg_image, voice_command_queue)
+
+            elif command in ("exit", "quit", "close"):
+                pygame.quit()
+                sys.exit()
+
+            elif command.startswith("open "):
+                category = command[5:].strip().lower()
+                if category.title() in PAGES:
+                    speak(f"Showing {category.title()}")
+                    show_category_page(screen, category.title(), bg_image, voice_command_queue)
+
+            else:
+                found_category = None
+                for cat in PAGES.keys():
+                    if cat.lower() in command:
+                        found_category = cat
+                        break
+                if found_category:
+                    speak(f"Showing {found_category}")
+                    show_category_page(screen, found_category, bg_image, voice_command_queue)
+
+            # Check for play command separately
+            if command.startswith("play "):
+                for category, path in PAGES.items():
+                    metadata_path = os.path.join(path, "metadata.json")
+                    if os.path.exists(metadata_path):
+                        with open(metadata_path) as f:
+                            for video in json.load(f):
+                                if video["title"].lower() == command[5:].strip().lower():
+                                    video_path = os.path.join(path, video["file"])
+                                    play_video(screen, video_path, bg_image, voice_command_queue)
+                                    break
+
+        
+        render_voice_command(screen, latest_voice_command)
+        pygame.display.flip()
+
+        # Handle mouse clicks
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if exit_rect.collidepoint(event.pos):
+                    running = False
+
+                elif find_button_rect.collidepoint(event.pos):
+                    show_find_page(screen, bg_image, voice_command_queue)
+
+                for rect, label in button_rects:
+                    if rect.collidepoint(event.pos):
+                        show_category_page(screen, label, bg_image, voice_command_queue)
+
+    pygame.quit()
+
+

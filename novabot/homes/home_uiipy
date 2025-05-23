@@ -1,0 +1,38 @@
+# home_ui.py
+
+import tkinter as tk
+
+class HomeUI:
+    def __init__(self, parent, on_navigate):
+        self.parent = parent
+        self.on_navigate = on_navigate
+
+        self.buttons = {}
+        self.categories = [
+            "Competitions", "Summer Camps", "Internships",
+            "Workshops", "Exhibitions", "News", "About"
+        ]
+
+        self.create_buttons()
+
+    def create_buttons(self):
+        button_frame = tk.Frame(self.parent, bg="white")
+        button_frame.place(relx=0.5, rely=0.75, anchor="center")
+
+        for i, category in enumerate(self.categories):
+            btn = tk.Button(
+                button_frame,
+                text=category,
+                font=("Arial", 14),
+                bg="#4CAF50",
+                fg="white",
+                padx=20,
+                pady=10,
+                command=lambda c=category: self.on_navigate(c)
+            )
+            btn.grid(row=i // 3, column=i % 3, padx=10, pady=10)
+            self.buttons[category] = btn
+
+    def navigate(self, category):
+        if category in self.buttons:
+            self.on_navigate(category)

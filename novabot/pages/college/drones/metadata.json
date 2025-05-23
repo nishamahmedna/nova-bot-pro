@@ -1,0 +1,62 @@
+[
+  {
+    "file": "video1.mp4",
+    "title": "Drone Training 1",
+    "description": "",
+    "keywords": ["Drone", "Drones"]
+  },
+  {
+    "file": "video2.mp4",
+    "title": "Drone Training 2",
+    "description": "Drone Training for Junagadh Agricultural University by Novatechrobo",
+    "keywords": ["Drone", "Drones", "Junagadh", "Agricultural", "University"]
+  },
+  {
+    "file": "video3.mp4",
+    "title": "Drone Workshop",
+    "description": "A quadcopter (also called a quadrotor helicopter) is a multi-rotor helicopter lifted and propelled by four rotors. Classified as rotorcraft, they generate lift through vertically oriented rotors. Typically using two clockwise (CW) and two counterclockwise (CCW) fixed-pitch propellers, they achieve control by varying each rotor's speed. This allows manipulation of thrust, position, and torque.",
+    "keywords": ["Drone", "Drones", "quadrotor", "helicopter", "rotors", "rotorcraft"]
+  },
+  {
+    "file": "video4.mp4",
+    "title": "Quad copter Drone 1",
+    "description": "",
+    "keywords": ["Drone", "Drones", "quad copter"]
+  },
+  {
+    "file": "video5.mp4",
+    "title": "Quadcopter Drone 2",
+    "description": "",
+    "keywords": ["Drone", "Drones", "quad copter"]
+  },
+  {
+    "file": "video6.mp4",
+    "title": "Drone Workshop 2",
+    "description": "Novatechrobo conducted a quadcopter workshop and launched the IoT Congress logo in a unique way using a drone",
+    "keywords": ["Drone", "Drones", "IoT", "India", "Congress", "2017"]
+  },
+  {
+    "file": "video7.mp4",
+    "title": "Quad copter Drone 3",
+    "description": "",
+    "keywords": ["Drone", "Drones"]
+  },
+  {
+    "file": "video8.mp4",
+    "title": "Quad copter Drone 4",
+    "description": "",
+    "keywords": ["Drone", "Drones", "Coimbatore"]
+  },
+  {
+    "file": "video9.mp4",
+    "title": "Drone Demonstration",
+    "description": "",
+    "keywords": ["Drone", "Drones", "Demo", "Demonstartion"]
+  },
+  {
+    "file": "video10.mp4",
+    "title": "Drone Videography",
+    "description": "Aerial photography to stand out from competitors. Services include virtual tours for residential and commercial real estate properties.",
+    "keywords": ["Drone", "Drones", "sky have eye", "videography", "proffessional"]
+  }
+]

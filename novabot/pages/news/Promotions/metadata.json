@@ -1,0 +1,20 @@
+[
+  {
+    "file": "video1.mp4",
+    "title": "Promotional Video",
+    "description": "",
+    "keywords": ["company", "promotion"]
+  },
+  {
+    "file": "video2.mp4",
+    "title": "Company Video",
+    "description": "",
+    "keywords": ["company", "promotion"]
+  },
+  {
+    "file": "video3.mp4",
+    "title": "Company Brief Report",
+    "description": "",
+    "keywords": ["report"]
+  }
+]

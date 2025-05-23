@@ -1,0 +1,20 @@
+[
+  {
+    "file": "video1.mp4",
+    "title": "Sumo",
+    "description": "",
+    "keywords": ["robotics", "sumobot", "sumo", "competition"]
+  },
+  {
+    "file": "video2.mp4",
+    "title": "Drone TV",
+    "description": "",
+    "keywords": ["robotics", "drone"]
+  },
+  {
+    "file": "video3.mp4",
+    "title": "IBC World News",
+    "description": "",
+    "keywords": ["international", "news", "ibc"]
+  }
+]

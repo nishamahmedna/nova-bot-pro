@@ -1,0 +1,25 @@
+[
+  {
+    "file": "video1.mp4",
+    "title": "Samaya TV Kannada",
+    "description": "",
+    "keywords": ["kannada"]
+  },
+  {
+    "file": "video2.mp4",
+    "title": "Samaya News",
+    "description": "",
+    "keywords": ["news"]
+  },
+  {
+    "file": "video3.mp4",
+    "title": "Samaya 15",
+    "description": "",
+    "keywords": ["samaya"]
+  },
+  {
+    "file": "video4.mp4",
+    "title": "Samaya 14",
+    "description": ""
+  }
+]
